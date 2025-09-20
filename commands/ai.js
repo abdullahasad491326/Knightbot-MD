@@ -31,20 +31,28 @@ async function aiCommand(sock, chatId, message) {
             });
 
             if (command === '.gpt') {
-                // Call the GPT API
-                const response = await axios.get(`https://api.dreaded.site/api/chatgpt?text=${encodeURIComponent(query)}`);
-                
-                if (response.data && response.data.success && response.data.result) {
-                    const answer = response.data.result.prompt;
+                // Call GiftedTech GPT API
+                const API_KEY = "gifted"; // replace with your key if needed
+                const BASE_URL = "https://api.giftedtech.web.id/api/ai/gpt4o";
+
+                const response = await axios.get(BASE_URL, {
+                    params: {
+                        apikey: API_KEY,
+                        q: query
+                    }
+                });
+
+                if (response.data && response.data.result) {
+                    const answer = response.data.result;
                     await sock.sendMessage(chatId, {
                         text: answer
                     }, {
                         quoted: message
                     });
-                    
                 } else {
-                    throw new Error('Invalid response from API');
+                    throw new Error('Invalid response from GPT API');
                 }
+
             } else if (command === '.gemini') {
                 const apis = [
                     `https://vapis.my.id/api/gemini?q=${encodeURIComponent(query)}`,
@@ -67,7 +75,6 @@ async function aiCommand(sock, chatId, message) {
                             }, {
                                 quoted: message
                             });
-                            
                             return;
                         }
                     } catch (e) {
@@ -76,6 +83,7 @@ async function aiCommand(sock, chatId, message) {
                 }
                 throw new Error('All Gemini APIs failed');
             }
+
         } catch (error) {
             console.error('API Error:', error);
             await sock.sendMessage(chatId, {
@@ -88,6 +96,7 @@ async function aiCommand(sock, chatId, message) {
                 quoted: message
             });
         }
+
     } catch (error) {
         console.error('AI Command Error:', error);
         await sock.sendMessage(chatId, {
@@ -102,4 +111,4 @@ async function aiCommand(sock, chatId, message) {
     }
 }
 
-module.exports = aiCommand; 
+module.exports = aiCommand;
