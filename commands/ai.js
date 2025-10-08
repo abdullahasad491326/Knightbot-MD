@@ -30,7 +30,7 @@ async function aiCommand(sock, chatId, message) {
 
             // ================== GPT Command ==================
             if (command === '.gpt') {
-                const API_KEY = "gifted"; // replace with your key if needed
+                const API_KEY = "gifted";
                 const BASE_URL = "https://api.giftedtech.web.id/api/ai/gpt4o";
 
                 const response = await axios.get(BASE_URL, {
@@ -71,7 +71,6 @@ async function aiCommand(sock, chatId, message) {
 
             // ================== GPT2 Command ==================
             } else if (command === '.gpt2') {
-                // Show typing indicator
                 await sock.sendPresenceUpdate('composing', chatId);
 
                 const response = await axios.get(`https://api.dreaded.site/api/chatgpt?text=${encodeURIComponent(query)}`);
@@ -83,31 +82,39 @@ async function aiCommand(sock, chatId, message) {
                     throw new Error('Invalid response from GPT2 API');
                 }
 
-                // Stop typing
                 await sock.sendPresenceUpdate('paused', chatId);
 
             // ================== BILL Command ==================
             } else if (command === '.bill') {
                 await sock.sendPresenceUpdate('composing', chatId);
 
-                const payload = {
-                    refNo: query,
-                    secret_token: "token_4rpak_security",
-                    app_name: "RoshanPakistan"
-                };
+                try {
+                    const payload = {
+                        refNo: query,
+                        secret_token: "token_4rpak_security",
+                        app_name: "RoshanPakistan"
+                    };
 
-                const response = await axios.post("https://bill.pitc.com.pk/bill/info", payload, {
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                    const response = await axios.post("https://bill.pitc.com.pk/bill/info", payload, {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'User-Agent': 'Mozilla/5.0 (Linux; Android 12)',
+                            'Accept': 'application/json',
+                            'Referer': 'https://bill.pitc.com.pk/'
+                        },
+                        timeout: 10000
+                    });
 
-                const data = response.data;
+                    const data = response.data;
 
-                if (!data || !data.consumerName) {
-                    return await sock.sendMessage(chatId, { text: "❌ No record found. Please check the reference number." }, { quoted: message });
-                }
+                    if (!data || !data.consumerName) {
+                        return await sock.sendMessage(chatId, { 
+                            text: "❌ No record found. Please check the reference number." 
+                        }, { quoted: message });
+                    }
 
-                const billMessage = `
-📄 *WAPDA Electricity Bill Information*
+                    const billMessage = `
+📄 *⚡Electricity Bill Info⚡*
 
 👤 *Consumer Name:* ${data.consumerName}
 👨‍👦 *Father Name:* ${data.fatherName}
@@ -125,11 +132,19 @@ async function aiCommand(sock, chatId, message) {
 📊 *Tariff:* ${data.tariff}
 
 ━━━━━━━━━━━━━━━━━━━━━━
-👨‍💻 *SYSTEM DEVELOPER:* https://wa.me/cyberexperpk
+👨‍💻 *SYSTEM DEVELOPER:* @923348544535  
+💬 *WhatsApp:* https://wa.me/cyberexperpk
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
-                await sock.sendMessage(chatId, { text: billMessage }, { quoted: message });
-                await sock.sendPresenceUpdate('paused', chatId);
+                    await sock.sendMessage(chatId, { text: billMessage }, { quoted: message });
+                    await sock.sendPresenceUpdate('paused', chatId);
+
+                } catch (err) {
+                    console.error('BILL API Error:', err.response?.data || err.message);
+                    await sock.sendMessage(chatId, { 
+                        text: "⚠️ Bill API request failed. Server may be down or reference number is invalid." 
+                    }, { quoted: message });
+                }
             }
 
         } catch (error) {
