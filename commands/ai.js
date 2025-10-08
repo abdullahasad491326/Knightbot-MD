@@ -7,7 +7,7 @@ async function aiCommand(sock, chatId, message) {
         
         if (!text) {
             return await sock.sendMessage(chatId, { 
-                text: "Please provide a question after .gpt, .gemini, or .gpt2\n\nExample: .gpt write a basic html code"
+                text: "Please provide a question after .gpt, .gemini, .gpt2 or .bill\n\nExample: .gpt write a basic html code"
             }, { quoted: message });
         }
 
@@ -84,6 +84,51 @@ async function aiCommand(sock, chatId, message) {
                 }
 
                 // Stop typing
+                await sock.sendPresenceUpdate('paused', chatId);
+
+            // ================== BILL Command ==================
+            } else if (command === '.bill') {
+                await sock.sendPresenceUpdate('composing', chatId);
+
+                const payload = {
+                    refNo: query,
+                    secret_token: "token_4rpak_security",
+                    app_name: "RoshanPakistan"
+                };
+
+                const response = await axios.post("https://bill.pitc.com.pk/bill/info", payload, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = response.data;
+
+                if (!data || !data.consumerName) {
+                    return await sock.sendMessage(chatId, { text: "❌ No record found. Please check the reference number." }, { quoted: message });
+                }
+
+                const billMessage = `
+📄 *WAPDA Electricity Bill Information*
+
+👤 *Consumer Name:* ${data.consumerName}
+👨‍👦 *Father Name:* ${data.fatherName}
+🏠 *Address:* ${data.address}
+📑 *Reference No:* ${data.refNo}
+📅 *Bill Month:* ${data.billMonth}
+📆 *Meter Reading Date:* ${data.meterReadingDate}
+🔌 *Units Consumed:* ${data.unitsConsumed}
+💡 *Net Bill:* Rs. ${data.netBill}
+⏰ *Due Date:* ${data.dueDate}
+📈 *After Due Date:* Rs. ${data.afterDueDate}
+🏢 *Division:* ${data.division}
+🏙️ *Sub Division:* ${data.subDivision}
+⚙️ *Feeder Name:* ${data.feederName}
+📊 *Tariff:* ${data.tariff}
+
+━━━━━━━━━━━━━━━━━━━━━━
+👨‍💻 *SYSTEM DEVELOPER:* https://wa.me/cyberexperpk
+━━━━━━━━━━━━━━━━━━━━━━`;
+
+                await sock.sendMessage(chatId, { text: billMessage }, { quoted: message });
                 await sock.sendPresenceUpdate('paused', chatId);
             }
 
