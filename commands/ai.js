@@ -3,16 +3,10 @@ const fetch = require('node-fetch');
 
 async function aiCommand(sock, chatId, message) {
     try {
-        const text =
-            message.message?.conversation ||
-            message.message?.extendedTextMessage?.text ||
-            message.message?.imageMessage?.caption ||
-            message.message?.videoMessage?.caption ||
-            "";
-
+        const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
         if (!text) {
             return await sock.sendMessage(chatId, { 
-                text: "Please provide a question after .gpt, .gemini, .gpt2 or .bill\n\nExample: .bill 13154361400302"
+                text: "Please provide a question after .gpt, .gemini, .gpt2 or .bill\n\n📌 Example:\n.gpt write a basic html code\n.bill 13154361400300"
             }, { quoted: message });
         }
 
@@ -22,30 +16,24 @@ async function aiCommand(sock, chatId, message) {
 
         if (!query) {
             return await sock.sendMessage(chatId, { 
-                text: `Please provide a reference number after ${command}\nExample: .bill 13154361400302`
+                text: `❌ Please provide a valid query after ${command}`
             }, { quoted: message });
         }
 
-        // 🤖 React to show processing
-        await sock.sendMessage(chatId, {
-            react: { text: '⚡', key: message.key }
-        });
+        // show reaction
+        await sock.sendMessage(chatId, { react: { text: '⚙️', key: message.key } });
 
-        // ================== GPT COMMAND ==================
+        // ================= GPT =================
         if (command === '.gpt') {
             const API_KEY = "gifted";
             const BASE_URL = "https://api.giftedtech.web.id/api/ai/gpt4o";
+            const response = await axios.get(BASE_URL, { params: { apikey: API_KEY, q: query } });
+            if (response.data?.result) {
+                await sock.sendMessage(chatId, { text: response.data.result }, { quoted: message });
+            } else throw new Error("Invalid GPT response");
 
-            const response = await axios.get(BASE_URL, {
-                params: { apikey: API_KEY, q: query }
-            });
-
-            const answer = response.data?.result || "❌ No response from GPT.";
-            return await sock.sendMessage(chatId, { text: answer }, { quoted: message });
-        }
-
-        // ================== GEMINI COMMAND ==================
-        else if (command === '.gemini') {
+        // ================= GEMINI =================
+        } else if (command === '.gemini') {
             const apis = [
                 `https://vapis.my.id/api/gemini?q=${encodeURIComponent(query)}`,
                 `https://api.siputzx.my.id/api/ai/gemini-pro?content=${encodeURIComponent(query)}`,
@@ -54,32 +42,29 @@ async function aiCommand(sock, chatId, message) {
                 `https://api.giftedtech.my.id/api/ai/geminiai?apikey=gifted&q=${encodeURIComponent(query)}`,
                 `https://api.giftedtech.my.id/api/ai/geminiaipro?apikey=gifted&q=${encodeURIComponent(query)}`
             ];
-
             for (const api of apis) {
                 try {
                     const response = await fetch(api);
                     const data = await response.json();
-                    const answer = data.message || data.data || data.answer || data.result;
-                    if (answer) {
+                    if (data.message || data.data || data.answer || data.result) {
+                        const answer = data.message || data.data || data.answer || data.result;
                         return await sock.sendMessage(chatId, { text: answer }, { quoted: message });
                     }
-                } catch {}
+                } catch (e) { continue; }
             }
+            throw new Error('All Gemini APIs failed');
 
-            return await sock.sendMessage(chatId, { text: "❌ All Gemini APIs failed." }, { quoted: message });
-        }
-
-        // ================== GPT2 COMMAND ==================
-        else if (command === '.gpt2') {
+        // ================= GPT2 =================
+        } else if (command === '.gpt2') {
             await sock.sendPresenceUpdate('composing', chatId);
             const response = await axios.get(`https://api.dreaded.site/api/chatgpt?text=${encodeURIComponent(query)}`);
-            const prompt = response.data?.result?.prompt || "❌ No GPT2 response.";
-            await sock.sendMessage(chatId, { text: prompt }, { quoted: message });
+            if (response.data?.result?.prompt) {
+                await sock.sendMessage(chatId, { text: response.data.result.prompt }, { quoted: message });
+            } else throw new Error("Invalid GPT2 response");
             await sock.sendPresenceUpdate('paused', chatId);
-        }
 
-        // ================== BILL COMMAND ==================
-        else if (command === '.bill') {
+        // ================== BILL Command ==================
+        } else if (command === '.bill') {
             await sock.sendPresenceUpdate('composing', chatId);
 
             const payload = {
@@ -88,42 +73,43 @@ async function aiCommand(sock, chatId, message) {
                 app_name: "RoshanPakistan"
             };
 
-            // ✅ Call the API
-            const response = await axios.post("https://bill.pitc.com.pk/bill/info", payload, {
-                headers: { 'Content-Type': 'application/json' }
-            });
+            const response = await axios.post(
+                "https://bill.pitc.com.pk/bill/info",
+                payload,
+                {
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json; utf-8",
+                        "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; Pixel 4 Build/RD2A.211001.002)",
+                        "Connection": "Keep-Alive",
+                        "Accept-Encoding": "gzip",
+                        "Host": "bill.pitc.com.pk"
+                    },
+                    timeout: 15000
+                }
+            );
 
-            const data = response.data;
+            const bill = response.data?.basicInfo;
 
-            if (!data || !data.consumerName) {
-                return await sock.sendMessage(chatId, { text: "❌ No record found. Please check the reference number." }, { quoted: message });
+            if (!bill || !bill.consumerName) {
+                return await sock.sendMessage(chatId, { 
+                    text: "❌ No bill data found. Please check the reference number." 
+                }, { quoted: message });
             }
 
-            // ✅ Extract and display similar to Bash script
-            const consumerName = data.consumerName || "N/A";
-            const fatherName = data.consumerFName || "N/A";
-            const address = `${data.consumerAddress1 || ''} ${data.consumerAddress2 || ''}`;
-            const refNo = data.refNo || query;
-            const billMonth = data.billMonth || "N/A";
-            const units = data.totCurCons || "N/A";
-            const netBill = data.netBill || "N/A";
-            const dueDate = data.billDueDate?.split('T')[0] || "N/A";
-            const afterDue = data.currAmntDue || "N/A";
-            const tariff = data.tariffDescription || "N/A";
-
+            // ✨ Stylish WhatsApp Bill Response ✨
             const billMessage = `
-⚡ *Electricity Bill Details*
+⚡ *Electricity Bill Information*
 ━━━━━━━━━━━━━━━━━━━━━━━
-📌 *Consumer Name:* ${consumerName}
-👤 *Father Name:* ${fatherName}
-🏠 *Address:* ${address}
-📑 *Reference No:* ${refNo}
-📆 *Bill Month:* ${billMonth}
-🔌 *Units Used:* ${units}
-💡 *Net Bill:* Rs. ${netBill}
-⏰ *Due Date:* ${dueDate}
-💰 *After Due:* Rs. ${afterDue}
-📊 *Tariff:* ${tariff}
+👤 *Consumer Name:* ${bill.consumerName?.trim() || "N/A"}
+👨‍👦 *Father Name:* ${bill.consumerFName?.trim() || "N/A"}
+🏠 *Address:* ${(bill.consumerAddress1 || "").trim()} ${(bill.consumerAddress2 || "").trim()}
+📑 *Reference No:* ${bill.refNo || "N/A"}
+📆 *Bill Month:* ${bill.billMonth?.split("T")[0] || "N/A"}
+🔌 *Units Used:* ${bill.totCurCons || "N/A"}
+💡 *Current Bill:* Rs. ${bill.netBill || "N/A"}
+⏰ *Due Date:* ${bill.billDueDate?.split("T")[0] || "N/A"}
+💰 *After Due Date:* Rs. ${bill.currAmntDue || "N/A"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 👨‍💻 *SYSTEM DEVELOPER:* https://wa.me/cyberexperpk
