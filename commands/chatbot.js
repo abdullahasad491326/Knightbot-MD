@@ -6,7 +6,7 @@ const moment = require('moment-timezone');
 const axios = require('axios');
 
 const USER_GROUP_DATA = path.join(__dirname, '../data/userGroupData.json');
-const chatMemory = { messages: new Map(), userInfo: new Map(), counter: {} };
+const chatMemory = { messages: new Map(), userCounter: new Map() };
 
 // ----------------- Data load/save -----------------
 function loadData() {
@@ -18,9 +18,19 @@ function loadData() {
       dailyAyah: d.dailyAyah || {},
       dailyAyahDate: d.dailyAyahDate || {},
       announcements: d.announcements || {},
+      lastAzkarDate: d.lastAzkarDate || {},
+      lastDailyMessage: d.lastDailyMessage || {},
     };
   } catch {
-    return { chatbot: {}, prayerNotified: {}, dailyAyah: {}, dailyAyahDate: {}, announcements: {} };
+    return {
+      chatbot: {},
+      prayerNotified: {},
+      dailyAyah: {},
+      dailyAyahDate: {},
+      announcements: {},
+      lastAzkarDate: {},
+      lastDailyMessage: {},
+    };
   }
 }
 
@@ -39,7 +49,6 @@ function getPrayerTimes(coords = { lat: 31.582045, lon: 74.329376 }) {
     const coordinates = new azan.Coordinates(coords.lat, coords.lon);
     const params = azan.CalculationMethod.MuslimWorldLeague();
     const times = new azan.PrayerTimes(coordinates, date, params);
-
     const fmt = dt => moment(dt).tz('Asia/Karachi').format('hh:mm A');
     return {
       fajr: fmt(times.fajr),
@@ -51,14 +60,12 @@ function getPrayerTimes(coords = { lat: 31.582045, lon: 74.329376 }) {
   } catch { return {}; }
 }
 
-// ----------------- Auto Azan Notifier -----------------
+// ----------------- Auto Azan -----------------
 async function autoAzanNotifier(sock, chatId, coords) {
   const data = loadData();
   if (!data.prayerNotified[chatId]) data.prayerNotified[chatId] = {};
-
   const currentTime = moment().tz('Asia/Karachi').format('HH:mm');
   const prayers = getPrayerTimes(coords);
-
   for (let [key, val] of Object.entries(prayers)) {
     const prayerTime = moment(val, 'hh:mm A').format('HH:mm');
     if (prayerTime === currentTime && data.prayerNotified[chatId][key] !== todayDateString()) {
@@ -70,29 +77,7 @@ async function autoAzanNotifier(sock, chatId, coords) {
   }
 }
 
-// ----------------- Greetings & Messages -----------------
-function greetingMessage() {
-  const h = moment().tz('Asia/Karachi').hour();
-  const day = moment().tz('Asia/Karachi').day();
-  if (day === 5 && h >= 11 && h < 16) return '🌸 جمعہ مبارک 🌸\nاللّٰہ ہمیں اپنے ذکر سے منور کرے 🤲';
-  if (h >= 5 && h < 11) return '🌅 السلام علیکم! صبح بخیر ❤️\nاللہ آپ کا دن برکتوں سے بھر دے۔';
-  if (h >= 22 || h < 5) return '🌙 شب بخیر 🌙\nاللہ آپ کو سکون اور نیک خواب عطا فرمائے۔';
-  return null;
-}
-
-const dailyDuas = [
-  '🤲 اللّٰهُمَّ اِنِّی اَسْأَلُکَ الْعَفْوَ وَالْعَافِیَةَ۔',
-  '🕊️ اَسْتَغْفِرُاللّٰهَ رَبِّی مِنْ كُلِّ ذَنْبٍ۔',
-  '💫 اللّٰہُمَّ اِنِّیْ اَسْأَلُکَ رِضَاکَ وَالْجَنَّةَ۔',
-];
-
-const islamicQuotes = [
-  '✨ اللّٰہ جسے چاہے عزت دے، جسے چاہے آزمائے۔',
-  '🤍 صبر ایمان کا آدھا حصہ ہے۔',
-  '💫 دعا مومن کا ہتھیار ہے۔',
-];
-
-// ----------------- Random Ayah -----------------
+// ----------------- Daily Ayah -----------------
 async function fetchRandomAyah(translation = 'ur.junagarhi') {
   try {
     const res = await fetch(`https://api.alquran.cloud/v1/ayah/random/${translation}`);
@@ -102,22 +87,31 @@ async function fetchRandomAyah(translation = 'ur.junagarhi') {
   return null;
 }
 
-// ----------------- Hijri Date -----------------
-async function fetchHijriDate() {
-  try {
-    const url = `http://api.aladhan.com/v1/gToH?date=${moment().tz('Asia/Karachi').format('DD-MM-YYYY')}`;
-    const res = await fetch(url);
-    const j = await res.json();
-    return j?.data?.hijri;
-  } catch { return null; }
-}
+// ----------------- Islamic Quotes -----------------
+const islamicQuotes = [
+  '✨ اللّٰہ جسے چاہے عزت دے، جسے چاہے آزمائے۔',
+  '🤍 صبر ایمان کا آدھا حصہ ہے۔',
+  '💫 دعا مومن کا ہتھیار ہے۔',
+];
 
 // ----------------- AI Reply -----------------
 async function getAIReply(userMessage) {
   try {
-    const res = await axios.get(`https://api.dreaded.site/api/chatgpt?text=${encodeURIComponent(userMessage)}`);
-    return res.data?.result?.prompt || '❌ جواب حاصل نہیں ہو سکا۔';
-  } catch { return '⚠️ سرور سے رابطہ نہیں۔'; }
+    const API_KEY = "gifted";
+    const BASE_URL = "https://api.giftedtech.web.id/api/ai/gpt4o";
+    const response = await axios.get(BASE_URL, {
+      params: { apikey: API_KEY, q: `براہ کرم اس کا جواب اردو میں مختصر اور پاکستانی انداز میں دیں: ${userMessage}` }
+    });
+    let reply = "⚠️ جواب حاصل نہیں ہو سکا۔";
+    if (response.data?.result) {
+      reply = response.data.result;
+      const lines = reply.split(/[\n.؟]/).filter(Boolean);
+      reply = lines.slice(0, 2).join('۔ ') + '۔';
+    }
+    return reply;
+  } catch {
+    return "⚠️ GPT API سے رابطہ نہیں ہو سکا۔";
+  }
 }
 
 // ----------------- Command Handler -----------------
@@ -129,54 +123,63 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
   const cmd = parts[0];
   const arg = parts.slice(1).join(' ');
 
-  if (match === 'on') { data.chatbot[chatId] = true; saveData(data); return sock.sendMessage(chatId, { text: '✅ چیٹ بوٹ آن ہوگیا — اب میں اردو میں سب کو جواب دوں گا۔' }); }
-  if (match === 'off') { delete data.chatbot[chatId]; saveData(data); return sock.sendMessage(chatId, { text: '❌ چیٹ بوٹ بند کر دیا گیا۔' }); }
+  if (match === 'on') { 
+    data.chatbot[chatId] = true; saveData(data); 
+    return sock.sendMessage(chatId, { text: '✅ چیٹ بوٹ آن ہوگیا — اب میں اردو میں سب کو جواب دوں گا۔' }); 
+  }
+  if (match === 'off') { 
+    delete data.chatbot[chatId]; saveData(data); 
+    return sock.sendMessage(chatId, { text: '❌ چیٹ بوٹ بند کر دیا گیا۔' }); 
+  }
 
-  if (cmd === '.announce') { 
-    if (!arg) return sock.sendMessage(chatId, { text: 'استعمال: .announce پیغام' }); 
+  if (cmd === '.announce' && arg) { 
     data.announcements[chatId] = { text: arg, time: new Date().toISOString() }; saveData(data); 
     return sock.sendMessage(chatId, { text: `📢 اعلان:\n\n${arg}` }); 
   }
 
-  if (cmd === '.dailyayah') { 
-    if (arg === 'on') { data.dailyAyah[chatId] = true; saveData(data); return sock.sendMessage(chatId, { text: '🕋 روزانہ آیت آن کر دی گئی۔' }); } 
-    if (arg === 'off') { delete data.dailyAyah[chatId]; saveData(data); return sock.sendMessage(chatId, { text: '🕋 روزانہ آیت بند کر دی گئی۔' }); } 
-  }
-
-  if (cmd === '.hijri') { 
-    const h = await fetchHijriDate(); 
-    if (!h) return sock.sendMessage(chatId, { text: '⚠️ ہجری تاریخ حاصل نہیں ہو سکی۔' }); 
-    return sock.sendMessage(chatId, { text: `📅 آج کی ہجری تاریخ:\n${h.day} ${h.month?.ar} ${h.year}` }); 
-  }
-
-  return sock.sendMessage(chatId, { text: 'کمانڈز:\n.chatbot on / off\n.announce پیغام\n.dailyayah on/off\n.hijri تاریخ' });
+  return sock.sendMessage(chatId, { text: 'کمانڈز:\n.chatbot on / off\n.announce پیغام' });
 }
 
 // ----------------- Chatbot Response -----------------
 async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   const data = loadData();
-  if (!data.chatbot[chatId]) return;
+  if (!data.chatbot[chatId]) return; // chatbot off → no reply
 
   await autoAzanNotifier(sock, chatId);
 
-  // Daily Ayah
-  if (data.dailyAyah[chatId] && data.dailyAyahDate[chatId] !== todayDateString()) {
-    const ay = await fetchRandomAyah();
-    if (ay) { await sock.sendMessage(chatId, { text: `📖 آج کی آیت:\n\n${ay.ayah}\n— سورہ ${ay.surah} (${ay.number})` }); data.dailyAyahDate[chatId] = todayDateString(); saveData(data); }
+  // Memory / Message counter for Azkar
+  if (!chatMemory.userCounter.has(senderId)) chatMemory.userCounter.set(senderId, 0);
+  let count = chatMemory.userCounter.get(senderId) + 1;
+  chatMemory.userCounter.set(senderId, count);
+
+  // Azkar every 50 messages
+  if (count % 50 === 0) {
+    if (!data.lastAzkarDate[chatId] || data.lastAzkarDate[chatId] !== todayDateString()) {
+      await sock.sendMessage(chatId, { text: '🕋 اذکار: سبحان الله، الحمدلله، لا اله الا اللہ، اللہ اکبر۔' });
+      data.lastAzkarDate[chatId] = todayDateString();
+      saveData(data);
+    }
   }
 
-  // Greetings / Dua / Quotes
-  const greet = greetingMessage(); if (greet) await sock.sendMessage(chatId, { text: greet });
-  await sock.sendMessage(chatId, { text: dailyDuas[Math.floor(Math.random() * dailyDuas.length)] });
-  await sock.sendMessage(chatId, { text: islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)] });
+  // Daily Ayah or Islamic Quote once per day
+  if (!data.lastDailyMessage[chatId] || data.lastDailyMessage[chatId] !== todayDateString()) {
+    const ay = await fetchRandomAyah();
+    if (ay) await sock.sendMessage(chatId, { text: `📖 آج کی آیت:\n\n${ay.ayah}\n— سورہ ${ay.surah} (${ay.number})` });
+    const quote = islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)];
+    await sock.sendMessage(chatId, { text: `💡 آج کا قول:\n${quote}` });
+    data.lastDailyMessage[chatId] = todayDateString();
+    saveData(data);
+  }
 
-  // Memory
+  // Memory for last 30 messages
   if (!chatMemory.messages.has(senderId)) chatMemory.messages.set(senderId, []);
-  const arr = chatMemory.messages.get(senderId); arr.push(userMessage); if (arr.length > 30) arr.shift();
+  const arr = chatMemory.messages.get(senderId);
+  arr.push(userMessage);
+  if (arr.length > 30) arr.shift();
 
-  // Instant AI reply
+  // AI reply
   const aiReply = await getAIReply(userMessage);
-  await sock.sendMessage(chatId, { text: aiReply }); // ✅ removed "quoted: msg" to stop forwarding / channel info
+  await sock.sendMessage(chatId, { text: aiReply }); // ✅ only AI reply
 }
 
 // ----------------- Export -----------------
