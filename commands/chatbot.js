@@ -6,17 +6,22 @@
 
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+const axios = require('axios');
 const azan = require('adhan');
 const moment = require('moment-timezone');
-const axios = require('axios');
 
+// ================== CONFIG ==================
 const USER_GROUP_DATA = path.join(__dirname, '../data/userGroupData.json');
-const chatMemory = { userCounter: new Map(), messages: new Map() };
 const BOT_TRIGGER = "@BOT"; // Must start with this
 const BOT_JID = '923261649609@s.whatsapp.net'; // Bot number
 
-// ----------------- Data load/save -----------------
+// ================== MEMORY ==================
+const chatMemory = {
+  userCounter: new Map(),
+  messages: new Map(),
+};
+
+// ================== UTILITIES ==================
 function loadData() {
   try {
     return JSON.parse(fs.readFileSync(USER_GROUP_DATA));
@@ -39,8 +44,8 @@ function todayDateString() {
   return moment().tz('Asia/Karachi').format('YYYY-MM-DD');
 }
 
-// ----------------- Prayer Times -----------------
-function getPrayerTimes(coords = { lat: 33.6844, lon: 73.0479 }) { // Islamabad
+// ================== PRAYER TIMES ==================
+function getPrayerTimes(coords = { lat: 33.6844, lon: 73.0479 }) {
   const date = new Date();
   const coordinates = new azan.Coordinates(coords.lat, coords.lon);
   const params = azan.CalculationMethod.MuslimWorldLeague();
@@ -55,10 +60,11 @@ function getPrayerTimes(coords = { lat: 33.6844, lon: 73.0479 }) { // Islamabad
   };
 }
 
-// ----------------- Auto Azan -----------------
+// ================== AUTO AZAN ==================
 async function autoAzanNotifier(sock, chatId) {
   const data = loadData();
   if (!data.prayerNotified[chatId]) data.prayerNotified[chatId] = {};
+
   const currentTime = moment().tz('Asia/Karachi').format('HH:mm');
   const prayers = getPrayerTimes();
 
@@ -73,13 +79,7 @@ async function autoAzanNotifier(sock, chatId) {
   }
 }
 
-// ----------------- Islamic Data -----------------
-const azkarList = [
-  'سبحان الله', 'الحمدلله', 'لا اله الا اللہ', 'اللہ اکبر',
-  'اللهم صل وسلم على نبینا محمد ﷺ', 'استغفر الله العظيم',
-  'لا حول ولا قوة الا بالله', 'رضا و جنت کی دعا'
-];
-
+// ================== ISLAMIC CONTENT ==================
 const dailyDuas = [
   '🤲 اللّٰهُمَّ اِنِّی اَسْأَلُکَ الْعَفْوَ وَالْعَافِیَةَ۔',
   '🕊️ اَسْتَغْفِرُاللّٰهَ رَبِّی مِنْ كُلِّ ذَنْبٍ۔',
@@ -96,21 +96,19 @@ const islamicQuotes = [
   '🕊️ نیکی اور صدقہ دل کو سکون دیتا ہے۔'
 ];
 
-// ----------------- GPT Reply -----------------
+// ================== GPT REPLY ==================
 async function getAIReply(userMessage) {
   try {
     const res = await axios.get("https://api.giftedtech.web.id/api/ai/gpt4o", {
-      params: { apikey: "gifted", q: `اردو میں جواب دیں، پاکستانی انداز میں: ${userMessage}` }
+      params: { apikey: "gifted", q: `اردو میں مکمل اور تفصیلی جواب دیں: ${userMessage}` }
     });
-    let reply = res.data?.result || "⚠️ جواب حاصل نہیں ہو سکا۔";
-    const lines = reply.split(/[\n.؟]/).filter(Boolean);
-    return lines.slice(0, 2).join('۔ ') + '۔';
-  } catch {
+    return res.data?.result || "⚠️ جواب حاصل نہیں ہو سکا۔";
+  } catch (e) {
     return "⚠️ GPT API سے رابطہ نہیں ہو سکا۔";
   }
 }
 
-// ----------------- Smart Islamic FAQ -----------------
+// ================== FAQ ==================
 function getIslamicFAQ(text) {
   const faqs = [
     { q: /روزہ|رمضان/, a: '🌙 روزہ فجر سے مغرب تک رکھا جاتا ہے۔ نیت دل میں کافی ہے، افطار کے وقت دعا پڑھنا سنت ہے۔' },
@@ -123,7 +121,7 @@ function getIslamicFAQ(text) {
   return null;
 }
 
-// ----------------- Commands -----------------
+// ================== COMMANDS ==================
 async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
   const data = loadData();
   const parts = fullText.trim().split(' ');
@@ -159,28 +157,31 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
   return sock.sendMessage(chatId, { text: 'کمانڈز:\n.chatbot on/off\n.namaz\n.myrecord\n.announce پیغام' });
 }
 
-// ----------------- Chatbot Response -----------------
+// ================== CHATBOT RESPONSE ==================
 async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   const data = loadData();
   if (!data.chatbot[chatId]) return;
   if (!userMessage) return;
 
-  // 🧠 Ignore media, stickers, etc.
+  // Ignore media/stickers etc.
   if (msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.stickerMessage ||
       msg.message?.audioMessage || msg.message?.documentMessage) return;
 
-  // ✅ Only respond if starts with "@BOT"
+  // ✅ Reply only if message STARTS WITH "@BOT"
   if (!userMessage.trim().toUpperCase().startsWith(BOT_TRIGGER)) return;
 
   const cleanText = userMessage.replace(BOT_TRIGGER, '').trim();
   if (!cleanText) return;
 
   await autoAzanNotifier(sock, chatId);
+
   chatMemory.userCounter.set(senderId, (chatMemory.userCounter.get(senderId) || 0) + 1);
 
+  // ✳️ Check FAQ first
   const faq = getIslamicFAQ(cleanText);
   if (faq) return sock.sendMessage(chatId, { text: faq });
 
+  // 🌙 Daily Dua & Quote once a day
   if (data.lastDailyMessage[chatId] !== todayDateString()) {
     const dua = dailyDuas[Math.floor(Math.random() * dailyDuas.length)];
     const quote = islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)];
@@ -189,11 +190,12 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
     saveData(data);
   }
 
+  // 💬 AI reply
   const aiReply = await getAIReply(cleanText);
   await sock.sendMessage(chatId, { text: aiReply });
 }
 
-// ----------------- Auto Tasks -----------------
+// ================== AUTO TASKS ==================
 async function sendJummaMessage(sock) {
   const data = loadData();
   const now = moment().tz('Asia/Karachi');
@@ -219,7 +221,7 @@ async function randomReminder(sock) {
   }
 }
 
-// ----------------- Export -----------------
+// ================== EXPORT ==================
 module.exports = {
   handleChatbotCommand,
   handleChatbotResponse,
