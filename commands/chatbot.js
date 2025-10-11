@@ -16,21 +16,17 @@ function loadData() {
     return {
       chatbot: d.chatbot || {},
       prayerNotified: d.prayerNotified || {},
-      dailyAyah: d.dailyAyah || {},
-      dailyAyahDate: d.dailyAyahDate || {},
-      announcements: d.announcements || {},
       lastAzkarDate: d.lastAzkarDate || {},
       lastDailyMessage: d.lastDailyMessage || {},
+      announcements: d.announcements || {},
     };
   } catch {
     return {
       chatbot: {},
       prayerNotified: {},
-      dailyAyah: {},
-      dailyAyahDate: {},
-      announcements: {},
       lastAzkarDate: {},
       lastDailyMessage: {},
+      announcements: {},
     };
   }
 }
@@ -67,7 +63,7 @@ async function autoAzanNotifier(sock, chatId, coords) {
   if (!data.prayerNotified[chatId]) data.prayerNotified[chatId] = {};
   const currentTime = moment().tz('Asia/Karachi').format('HH:mm');
   const prayers = getPrayerTimes(coords);
-  for (let [key, val] of Object.entries(prayers)) {
+  await Promise.all(Object.entries(prayers).map(async ([key, val]) => {
     const prayerTime = moment(val, 'hh:mm A').format('HH:mm');
     if (prayerTime === currentTime && data.prayerNotified[chatId][key] !== todayDateString()) {
       data.prayerNotified[chatId][key] = todayDateString();
@@ -75,7 +71,7 @@ async function autoAzanNotifier(sock, chatId, coords) {
       const prayerNames = { fajr: 'فجر', dhuhr: 'ظہر', asr: 'عصر', maghrib: 'مغرب', isha: 'عشاء' };
       await sock.sendMessage(chatId, { text: `🕌 ${prayerNames[key]} کی اذان کا وقت ہوگیا ہے!\nاللہ اکبر 🤲\n(وقت: ${val})` });
     }
-  }
+  }));
 }
 
 // ----------------- Daily Ayah -----------------
@@ -91,7 +87,7 @@ async function fetchRandomAyah(translation = 'ur.junagarhi') {
 // ----------------- Azkar & Duas -----------------
 const azkarList = [
   'سبحان الله', 'الحمدلله', 'لا اله الا اللہ', 'اللہ اکبر',
-  'اللهم صل وسلم على نبينا محمد ﷺ', 'استغفر الله العظيم',
+  'اللهم صل وسلم على نبینا محمد ﷺ', 'استغفر الله العظيم',
   'لا حول ولا قوة الا بالله', 'رضا و جنت کی دعا'
 ];
 
@@ -160,12 +156,13 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
 // ----------------- Chatbot Response -----------------
 async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   const data = loadData();
-  if (!data.chatbot[chatId]) return; // chatbot off → no reply
-  if (!userMessage) return; // only text messages
+  if (!data.chatbot[chatId]) return;
+  if (!userMessage) return;
 
-  // Check if bot was mentioned
-  const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  if (!mentions.includes(BOT_JID)) return; // ignore if bot not mentioned
+  // Check mentions properly
+  const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+  if (!mentionedJids.includes(BOT_JID) && !text.includes('@' + BOT_JID.split('@')[0])) return;
 
   await autoAzanNotifier(sock, chatId);
 
@@ -174,27 +171,23 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   let count = chatMemory.userCounter.get(senderId) + 1;
   chatMemory.userCounter.set(senderId, count);
 
-  // Azkar every 50 messages
-  if (count % 50 === 0) {
-    if (!data.lastAzkarDate[chatId] || data.lastAzkarDate[chatId] !== todayDateString()) {
-      const azkarText = azkarList.join('، ');
-      await sock.sendMessage(chatId, { text: `🕋 اذکار: ${azkarText}۔` });
-      data.lastAzkarDate[chatId] = todayDateString();
-      saveData(data);
-    }
+  // Prepare daily messages
+  const dailyMsgs = [];
+  if (count % 50 === 0 && (!data.lastAzkarDate[chatId] || data.lastAzkarDate[chatId] !== todayDateString())) {
+    dailyMsgs.push({ text: `🕋 اذکار: ${azkarList.join('، ')}۔` });
+    data.lastAzkarDate[chatId] = todayDateString();
   }
-
-  // Daily Ayah / Dua / Quote once per day
   if (!data.lastDailyMessage[chatId] || data.lastDailyMessage[chatId] !== todayDateString()) {
     const ay = await fetchRandomAyah();
-    if (ay) await sock.sendMessage(chatId, { text: `📖 آج کی آیت:\n\n${ay.ayah}\n— سورہ ${ay.surah} (${ay.number})` });
-    const dua = dailyDuas[Math.floor(Math.random() * dailyDuas.length)];
-    const quote = islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)];
-    await sock.sendMessage(chatId, { text: `🤲 دعا:\n${dua}` });
-    await sock.sendMessage(chatId, { text: `💡 قول:\n${quote}` });
+    if (ay) dailyMsgs.push({ text: `📖 آج کی آیت:\n\n${ay.ayah}\n— سورہ ${ay.surah} (${ay.number})` });
+    dailyMsgs.push({ text: `🤲 دعا:\n${dailyDuas[Math.floor(Math.random() * dailyDuas.length)]}` });
+    dailyMsgs.push({ text: `💡 قول:\n${islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)]}` });
     data.lastDailyMessage[chatId] = todayDateString();
-    saveData(data);
   }
+
+  // Send all daily messages in parallel
+  await Promise.all(dailyMsgs.map(m => sock.sendMessage(chatId, m)));
+  saveData(data);
 
   // Memory for last 30 messages
   if (!chatMemory.messages.has(senderId)) chatMemory.messages.set(senderId, []);
@@ -204,7 +197,7 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
 
   // AI reply
   const aiReply = await getAIReply(userMessage);
-  await sock.sendMessage(chatId, { text: aiReply }); // ✅ only AI reply
+  await sock.sendMessage(chatId, { text: aiReply });
 }
 
 // ----------------- Export -----------------
