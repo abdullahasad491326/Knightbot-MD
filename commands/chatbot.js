@@ -1,9 +1,3 @@
-// chatbot.js
-// =============================================
-// 🤖 SMART ISLAMIC WHATSAPP BOT (PAKISTAN)
-// Developed by CYBEREXPERTPK
-// =============================================
-
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -12,7 +6,7 @@ const moment = require('moment-timezone');
 
 // ================== CONFIG ==================
 const USER_GROUP_DATA = path.join(__dirname, '../data/userGroupData.json');
-const BOT_TRIGGER = "@BOT"; // Must start with this
+const BOT_TRIGGER = "@Bot"; // Must start with this
 const BOT_JID = '923261649609@s.whatsapp.net'; // Bot number
 
 // ================== MEMORY ==================
@@ -100,11 +94,13 @@ const islamicQuotes = [
 async function getAIReply(userMessage) {
   try {
     const res = await axios.get("https://api.giftedtech.web.id/api/ai/gpt4o", {
-      params: { apikey: "gifted", q: `اردو میں مکمل اور تفصیلی جواب دیں: ${userMessage}` }
+      params: { apikey: "gifted", q: ` اردو میں مکمل مگر مختصر سا جواب دیں زیادہ لمبا نہیں: ${userMessage}` },
+      timeout: 10000
     });
-    return res.data?.result || "⚠️ جواب حاصل نہیں ہو سکا۔";
+    return res.data?.result?.trim() || "⚠️ جواب حاصل نہیں ہو سکا۔";
   } catch (e) {
-    return "⚠️ GPT API سے رابطہ نہیں ہو سکا۔";
+    console.error('[GPT ERROR]', e.message);
+    return "⚠️ GPT سروس سے فی الحال جواب حاصل نہیں ہو سکا۔";
   }
 }
 
@@ -130,7 +126,7 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
 
   if (match === 'on') {
     data.chatbot[chatId] = true; saveData(data);
-    return sock.sendMessage(chatId, { text: '✅ چیٹ بوٹ آن ہوگیا — اب میں صرف "@BOT" سے شروع ہونے والے میسج پر جواب دوں گا۔' });
+    return sock.sendMessage(chatId, { text: '✅ چیٹ بوٹ آن ہوگیا — اب میں صرف "@Bot" سے شروع ہونے والے میسج پر جواب دوں گا۔' });
   }
 
   if (match === 'off') {
@@ -154,7 +150,7 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
     return sock.sendMessage(chatId, { text: `📢 اعلان:\n${arg}` });
   }
 
-  return sock.sendMessage(chatId, { text: 'کمانڈز:\n.chatbot on/off\n.namaz\n.myrecord\n.announce پیغام' });
+  return sock.sendMessage(chatId, { text: '📜 دستیاب کمانڈز:\n.chatbot on/off\n.namaz\n.myrecord\n.announce پیغام' });
 }
 
 // ================== CHATBOT RESPONSE ==================
@@ -167,7 +163,7 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   if (msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.stickerMessage ||
       msg.message?.audioMessage || msg.message?.documentMessage) return;
 
-  // ✅ Reply only if message STARTS WITH "@BOT"
+  // ✅ Reply only if message starts with "@BOT"
   if (!userMessage.trim().toUpperCase().startsWith(BOT_TRIGGER)) return;
 
   const cleanText = userMessage.replace(BOT_TRIGGER, '').trim();
