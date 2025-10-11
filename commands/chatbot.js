@@ -7,6 +7,7 @@ const axios = require('axios');
 
 const USER_GROUP_DATA = path.join(__dirname, '../data/userGroupData.json');
 const chatMemory = { messages: new Map(), userCounter: new Map() };
+const BOT_JID = '923261649609@s.whatsapp.net'; // bot number
 
 // ----------------- Data load/save -----------------
 function loadData() {
@@ -42,8 +43,8 @@ function saveData(d) {
 // ----------------- Helpers -----------------
 function todayDateString() { return moment().tz('Asia/Karachi').format('YYYY-MM-DD'); }
 
-// ----------------- Prayer times (Islamabad) -----------------
-function getPrayerTimes(coords = { lat: 33.6844, lon: 73.0479 }) {
+// ----------------- Prayer times -----------------
+function getPrayerTimes(coords = { lat: 33.6844, lon: 73.0479 }) { // Islamabad
   try {
     const date = new Date();
     const coordinates = new azan.Coordinates(coords.lat, coords.lon);
@@ -87,13 +88,27 @@ async function fetchRandomAyah(translation = 'ur.junagarhi') {
   return null;
 }
 
-// ----------------- Islamic Quotes -----------------
+// ----------------- Azkar & Duas -----------------
+const azkarList = [
+  'سبحان الله', 'الحمدلله', 'لا اله الا اللہ', 'اللہ اکبر',
+  'اللهم صل وسلم على نبينا محمد ﷺ', 'استغفر الله العظيم',
+  'لا حول ولا قوة الا بالله', 'رضا و جنت کی دعا'
+];
+
+const dailyDuas = [
+  '🤲 اللّٰهُمَّ اِنِّی اَسْأَلُکَ الْعَفْوَ وَالْعَافِیَةَ۔',
+  '🕊️ اَسْتَغْفِرُاللّٰهَ رَبِّی مِنْ كُلِّ ذَنْبٍ۔',
+  '💫 اللّٰہُمَّ اِنِّیْ اَسْأَلُکَ رِضَاکَ وَالْجَنَّةَ۔',
+  '🌸 اللہ ہمیں صبر اور حکمت عطا فرمائے۔',
+  '🕌 اللہ ہماری نماز اور عبادات قبول فرمائے۔'
+];
+
 const islamicQuotes = [
   '✨ اللّٰہ جسے چاہے عزت دے، جسے چاہے آزمائے۔',
   '🤍 صبر ایمان کا آدھا حصہ ہے۔',
   '💫 دعا مومن کا ہتھیار ہے۔',
-  '💫 اللہ کے نزدیک سب سے محبوب عمل نیکی ہے۔',
-  '🌸 ہر دن ایک نئی رحمت ہے، شکر گزار رہیں۔',
+  '💡 اللہ کی رحمت ہر چیز پر غالب ہے۔',
+  '🕊️ نیکی اور صدقہ دل کو سکون دیتا ہے۔'
 ];
 
 // ----------------- AI Reply -----------------
@@ -146,11 +161,11 @@ async function handleChatbotCommand(sock, chatId, msg, match, fullText = '') {
 async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   const data = loadData();
   if (!data.chatbot[chatId]) return; // chatbot off → no reply
-  if (!userMessage || !msg.message?.conversation) return; // only text messages
+  if (!userMessage) return; // only text messages
 
-  // Check if bot is mentioned
+  // Check if bot was mentioned
   const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  if (!mentions.includes(sock.user.jid)) return; // ignore if not mentioned
+  if (!mentions.includes(BOT_JID)) return; // ignore if bot not mentioned
 
   await autoAzanNotifier(sock, chatId);
 
@@ -162,18 +177,21 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
   // Azkar every 50 messages
   if (count % 50 === 0) {
     if (!data.lastAzkarDate[chatId] || data.lastAzkarDate[chatId] !== todayDateString()) {
-      await sock.sendMessage(chatId, { text: '🕋 اذکار: سبحان الله، الحمدلله، لا اله الا اللہ، اللہ اکبر۔' });
+      const azkarText = azkarList.join('، ');
+      await sock.sendMessage(chatId, { text: `🕋 اذکار: ${azkarText}۔` });
       data.lastAzkarDate[chatId] = todayDateString();
       saveData(data);
     }
   }
 
-  // Daily Ayah / Quote once per day
+  // Daily Ayah / Dua / Quote once per day
   if (!data.lastDailyMessage[chatId] || data.lastDailyMessage[chatId] !== todayDateString()) {
     const ay = await fetchRandomAyah();
     if (ay) await sock.sendMessage(chatId, { text: `📖 آج کی آیت:\n\n${ay.ayah}\n— سورہ ${ay.surah} (${ay.number})` });
+    const dua = dailyDuas[Math.floor(Math.random() * dailyDuas.length)];
     const quote = islamicQuotes[Math.floor(Math.random() * islamicQuotes.length)];
-    await sock.sendMessage(chatId, { text: `💡 آج کا قول:\n${quote}` });
+    await sock.sendMessage(chatId, { text: `🤲 دعا:\n${dua}` });
+    await sock.sendMessage(chatId, { text: `💡 قول:\n${quote}` });
     data.lastDailyMessage[chatId] = todayDateString();
     saveData(data);
   }
@@ -186,7 +204,7 @@ async function handleChatbotResponse(sock, chatId, msg, userMessage, senderId) {
 
   // AI reply
   const aiReply = await getAIReply(userMessage);
-  await sock.sendMessage(chatId, { text: aiReply }); // ✅ only one message
+  await sock.sendMessage(chatId, { text: aiReply }); // ✅ only AI reply
 }
 
 // ----------------- Export -----------------
